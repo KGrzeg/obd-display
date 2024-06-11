@@ -6,7 +6,9 @@
 #include "BluetoothSerial.h"
 #include "ELMduino.h"
 
+#include "utils.h"
 #include "images.h"
+#include "OBDClient.h"
 
 #if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
 #error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
@@ -32,9 +34,10 @@
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 BluetoothSerial SerialBT;
 ELM327 myELM327;
+OBDClient elmoo(myELM327);
 
 bool connected = false;
-bool demo_mode = true; // set in source code
+bool demo_mode = false; // set in source code
 
 uint16_t potValue = 0;
 struct
@@ -96,32 +99,40 @@ void connect_to_obd()
     return;
   }
 
-  uint8_t address[6] = {0xAA, 0xBB, 0xCC, 0x11, 0x22, 0x33};
-  my_log("Connecting to BT via MAC address AA:BB:CC:11:22:33...");
+  elmoo.connect(ELM_PORT);
+  connected = elmoo.isConnected();
 
-  if (!ELM_PORT.connect(address))
-  {
-    my_log("Couldn't connect to BT [MAC]");
-
-    my_log("Connecting to BT via name OBDII...");
-    if (!ELM_PORT.connect("OBDII"))
-    {
-      my_log("Couldn't connect to BT [name]]");
-      return;
-    }
+  if (connected){
+    elmoo.startFetching();
+  } else {
+    my_log("failed to connect :<");
   }
+  // uint8_t address[6] = {0xAA, 0xBB, 0xCC, 0x11, 0x22, 0x33};
+  // my_log("Connecting to BT via MAC address AA:BB:CC:11:22:33...");
 
-  my_log("OBD connected!");
-  my_log("Connecting to OBD scanner...");
+  // if (!ELM_PORT.connect(address))
+  // {
+  //   my_log("Couldn't connect to BT [MAC]");
 
-  if (!myELM327.begin(ELM_PORT, true, 2000))
-  {
-    my_log("Couldn't connect to OBD scanner");
-    return;
-  }
+  //   my_log("Connecting to BT via name OBDII...");
+  //   if (!ELM_PORT.connect("OBDII"))
+  //   {
+  //     my_log("Couldn't connect to BT [name]]");
+  //     return;
+  //   }
+  // }
 
-  connected = true;
-  my_log("Connected to ELM327");
+  // my_log("OBD connected!");
+  // my_log("Connecting to OBD scanner...");
+
+  // if (!myELM327.begin(ELM_PORT, true, 2000))
+  // {
+  //   my_log("Couldn't connect to OBD scanner");
+  //   return;
+  // }
+
+  // connected = true;
+  // my_log("Connected to ELM327");
 }
 
 void read_data()
@@ -136,18 +147,25 @@ void read_data()
   }
   else
   {
-    float tempRPM = myELM327.rpm();
+    // float tempRPM = myELM327.rpm();
 
-    if (myELM327.nb_rx_state == ELM_SUCCESS)
+    // if (myELM327.nb_rx_state == ELM_SUCCESS)
+    // {
+    //   gui_data.rpm = (uint32_t)tempRPM;
+    // }
+    // else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
+    //   myELM327.printError();
+
+    // // TODO: Read something, check how to request multiple values at once
+    // gui_data.voltage = 13.7f;
+    // gui_data.temperature = 35;
+    elmoo.update();
+    if (elmoo.isDataReady())
     {
-      gui_data.rpm = (uint32_t)tempRPM;
+      gui_data.voltage = elmoo.get_batteryVoltage();
+      gui_data.rpm = elmoo.get_rpm();
+      gui_data.temperature = elmoo.get_oilTemp();
     }
-    else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-      myELM327.printError();
-
-    // TODO: Read something, check how to request multiple values at once
-    gui_data.voltage = 13.7f;
-    gui_data.temperature = 35;
   }
 }
 
@@ -229,22 +247,26 @@ void draw_accumulator_widget(int16_t x, int16_t y, float value)
 void redraw_screen()
 {
   tft.fillScreen(ST77XX_BLACK);
+  tft.setCursor(0, 0);
+  tft.setTextColor(ST77XX_WHITE);
 
   if (demo_mode)
   {
-    tft.setCursor(0, 0);
-    tft.setTextColor(ST77XX_WHITE);
     tft.print("DEMO MODE");
   }
+  else
+  {
+    tft.print("LIVE MODE");
+  }
 
-  // my_log("RPM: ");
-  // my_log(gui_data.rpm);
+  my_log("RPM: ");
+  my_log(gui_data.rpm);
 
-  // my_log("Battery: ");
-  // my_log(gui_data.voltage);
+  my_log("Battery: ");
+  my_log(gui_data.voltage);
 
-  // my_log("Temperature: ");
-  // my_log(gui_data.temperature);
+  my_log("Temperature: ");
+  my_log(gui_data.temperature);
 
   draw_temperature_widget(8, 110, gui_data.temperature);
   draw_accumulator_widget(75, 122, gui_data.voltage);
